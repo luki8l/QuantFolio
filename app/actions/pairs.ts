@@ -65,7 +65,7 @@ export async function getPairsData(symbolA: string, symbolB: string): Promise<Pa
         if (alignedA.length < 100) return { error: "Insufficient overlapping data (need > 100 days)" };
 
         // Analyze
-        const analysis = analyzePairs(alignedA, alignedB);
+        const analysis = analyzePairs(alignedA, alignedB, alignedDates);
 
         return {
             symbolA: symbolA.toUpperCase(),

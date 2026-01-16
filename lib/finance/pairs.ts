@@ -11,6 +11,15 @@ function std(data: number[]): number {
     return Math.sqrt(variance);
 }
 
+export interface Trade {
+    type: 'Long' | 'Short';
+    entryDate: string;
+    exitDate: string;
+    entryZ: number;
+    exitZ: number;
+    pnl: number;
+}
+
 export interface BacktestResult {
     equityCurve: number[];
     trades: number;
@@ -18,6 +27,7 @@ export interface BacktestResult {
     totalReturn: number;
     maxDrawdown: number;
     sharpeRatio: number;
+    history: Trade[];
 }
 
 export interface PairsAnalysisResult {
@@ -82,7 +92,8 @@ function calculateBacktest(
     zScores: number[],
     pricesA: number[],
     pricesB: number[],
-    hedgeRatio: number
+    hedgeRatio: number,
+    dates: string[]
 ): BacktestResult {
     let equity = 10000;
     const equityCurve = [equity];
@@ -90,19 +101,28 @@ function calculateBacktest(
 
     let entryPriceA = 0;
     let entryPriceB = 0;
+    let entryDate = "";
+    let entryZ = 0;
 
     let wins = 0;
     let totalTrades = 0;
     let peakEquity = equity;
     let maxDrawdown = 0;
+    const history: Trade[] = [];
 
-    const sizeA = 100;
-    const sizeB = sizeA * hedgeRatio;
+    // Position Sizing: Fixed Exposure
+    // We allocate $1000 per leg (not all-in)
+    const exposurePerLeg = 1000;
+
+    // Units based on first price to keep sizes consistent throughout
+    const sizeA = exposurePerLeg / pricesA[0];
+    const sizeB = (exposurePerLeg * hedgeRatio) / pricesB[0];
 
     for (let i = 1; i < zScores.length; i++) {
         const z = zScores[i];
         const pA = pricesA[i];
         const pB = pricesB[i];
+        const date = dates[i];
 
         if (position !== 0) {
             const crossedMean = (position === 1 && z >= 0) || (position === -1 && z <= 0);
@@ -111,15 +131,25 @@ function calculateBacktest(
                 let pnl = 0;
                 if (position === 1) {
                     pnl += sizeA * (pA - entryPriceA);
-                    pnl -= sizeB * (pB - entryPriceB);
+                    pnl += sizeB * (pB - entryPriceB);
                 } else if (position === -1) {
                     pnl += sizeA * (entryPriceA - pA);
-                    pnl += sizeB * (pB - entryPriceB);
+                    pnl += sizeB * (entryPriceB - pB);
                 }
 
                 equity += pnl;
                 totalTrades++;
                 if (pnl > 0) wins++;
+
+                history.push({
+                    type: position === 1 ? 'Long' : 'Short',
+                    entryDate,
+                    exitDate: date,
+                    entryZ,
+                    exitZ: z,
+                    pnl
+                });
+
                 position = 0;
             }
         }
@@ -129,10 +159,14 @@ function calculateBacktest(
                 position = -1;
                 entryPriceA = pA;
                 entryPriceB = pB;
+                entryDate = date;
+                entryZ = z;
             } else if (z < -2.0) {
                 position = 1;
                 entryPriceA = pA;
                 entryPriceB = pB;
+                entryDate = date;
+                entryZ = z;
             }
         }
 
@@ -160,11 +194,12 @@ function calculateBacktest(
         winRate,
         totalReturn,
         maxDrawdown,
-        sharpeRatio: sharpe
+        sharpeRatio: sharpe,
+        history
     };
 }
 
-export function analyzePairs(pricesA: number[], pricesB: number[]): PairsAnalysisResult {
+export function analyzePairs(pricesA: number[], pricesB: number[], dates: string[]): PairsAnalysisResult {
     const logA = pricesA.map(p => Math.log(p));
     const logB = pricesB.map(p => Math.log(p));
 
@@ -181,7 +216,7 @@ export function analyzePairs(pricesA: number[], pricesB: number[]): PairsAnalysi
 
     const isCointegrated = halfLife < 60 && halfLife > 0;
 
-    const backtest = calculateBacktest(zScore, pricesA, pricesB, beta);
+    const backtest = calculateBacktest(zScore, pricesA, pricesB, beta, dates);
 
     return {
         hedgeRatio: beta,

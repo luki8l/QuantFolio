@@ -114,7 +114,7 @@ export function PairsCharts({ symbolA, symbolB, dates, pricesA, pricesB, analysi
             </div>
 
             {/* 3. Backtest Results */}
-            <div className="h-[350px]">
+            <div className="min-h-[450px]">
                 <BacktestCard backtest={analysis.backtest} dates={dates} />
             </div>
 
