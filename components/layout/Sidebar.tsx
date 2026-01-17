@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Calculator, ChevronLeft, ChevronRight, PieChart, TrendingUp, Settings, Activity } from "lucide-react";
+import { LayoutDashboard, Calculator, ChevronLeft, ChevronRight, PieChart, TrendingUp, Settings, Activity, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarItem {
@@ -17,6 +17,7 @@ interface SidebarItem {
 const items: SidebarItem[] = [
     { label: "Dashboard", icon: LayoutDashboard, href: "/" },
     { label: "Option Pricing", icon: Calculator, href: "/pricing" },
+    { label: "Volatility Surface", icon: BarChart3, href: "/volatility" },
     { label: "Monte Carlo", icon: TrendingUp, href: "/monte-carlo" },
     { label: "Market Sentiment", icon: TrendingUp, href: "/sentiment" },
     { label: "Pairs Trading", icon: Activity, href: "/pairs" },

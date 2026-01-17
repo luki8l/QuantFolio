@@ -2,19 +2,26 @@
 
 import { useState } from "react";
 import { getPairsData, getBasketData, PairsDataResponse, BasketDataResponse } from "@/app/actions/pairs";
+import { BacktestConfig, DEFAULT_BACKTEST_CONFIG } from "@/lib/finance/pairsConfig";
 import { PairsCharts } from "@/components/pairs/PairsCharts";
 import { PairsInput } from "@/components/pairs/PairsInput";
 import { PairsScanner } from "@/components/pairs/PairsScanner";
 import { BasketInput } from "@/components/pairs/BasketInput";
 import { BasketResults } from "@/components/pairs/BasketResults";
+import { StrategySettings } from "@/components/pairs/StrategySettings";
 import { Search, Compass, BarChart2, Layers } from "lucide-react";
 
 export default function PairsPage() {
     const [symbolA, setSymbolA] = useState("KO");
     const [symbolB, setSymbolB] = useState("PEP");
+    const [lookbackYears, setLookbackYears] = useState(2);
+
+    // Strategy Config State
+    const [strategyConfig, setStrategyConfig] = useState<BacktestConfig>(DEFAULT_BACKTEST_CONFIG);
 
     // Basket State
     const [basketSymbols, setBasketSymbols] = useState(["XOM", "CVX", "BP"]);
+    const [basketLookbackYears, setBasketLookbackYears] = useState(2);
     const [basketData, setBasketData] = useState<BasketDataResponse | null>(null);
 
     const [data, setData] = useState<PairsDataResponse | null>(null);
@@ -32,7 +39,7 @@ export default function PairsPage() {
         if (view !== 'analysis') setView('analysis');
 
         try {
-            const res = await getPairsData(symA, symB);
+            const res = await getPairsData(symA, symB, lookbackYears, strategyConfig);
             if ('error' in res && res.error) {
                 setError(res.error);
             } else if ('analysis' in res) {
@@ -53,7 +60,7 @@ export default function PairsPage() {
         setBasketData(null);
 
         try {
-            const res = await getBasketData(basketSymbols);
+            const res = await getBasketData(basketSymbols, basketLookbackYears, strategyConfig);
             if ('error' in res && res.error) {
                 setError(res.error);
             } else {
@@ -123,8 +130,15 @@ export default function PairsPage() {
                         symbolB={symbolB}
                         setSymbolA={setSymbolA}
                         setSymbolB={setSymbolB}
+                        lookbackYears={lookbackYears}
+                        setLookbackYears={setLookbackYears}
                         onAnalyze={() => handleAnalyze()}
                         isLoading={loading}
+                    />
+
+                    <StrategySettings
+                        config={strategyConfig}
+                        onChange={setStrategyConfig}
                     />
 
                     {error && (
@@ -153,8 +167,15 @@ export default function PairsPage() {
                     <BasketInput
                         symbols={basketSymbols}
                         setSymbols={setBasketSymbols}
+                        lookbackYears={basketLookbackYears}
+                        setLookbackYears={setBasketLookbackYears}
                         onAnalyze={handleAnalyzeBasket}
                         isLoading={loading}
+                    />
+
+                    <StrategySettings
+                        config={strategyConfig}
+                        onChange={setStrategyConfig}
                     />
 
                     {error && (

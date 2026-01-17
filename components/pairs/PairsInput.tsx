@@ -9,11 +9,13 @@ interface PairsInputProps {
     symbolB: string;
     setSymbolA: (s: string) => void;
     setSymbolB: (s: string) => void;
+    lookbackYears: number;
+    setLookbackYears: (y: number) => void;
     onAnalyze: () => void;
     isLoading: boolean;
 }
 
-export function PairsInput({ symbolA, symbolB, setSymbolA, setSymbolB, onAnalyze, isLoading }: PairsInputProps) {
+export function PairsInput({ symbolA, symbolB, setSymbolA, setSymbolB, lookbackYears, setLookbackYears, onAnalyze, isLoading }: PairsInputProps) {
     return (
         <DashboardCard className="w-full">
             <h3 className="font-semibold text-sm mb-4">Select Pairs</h3>
@@ -43,6 +45,20 @@ export function PairsInput({ symbolA, symbolB, setSymbolA, setSymbolB, onAnalyze
                             placeholder="e.g. PEP"
                         />
                     </div>
+                </div>
+                <div className="flex-1 w-full md:max-w-[180px]">
+                    <label className="text-xs text-muted-foreground mb-1 block">Lookback Period</label>
+                    <select
+                        value={lookbackYears}
+                        onChange={(e) => setLookbackYears(Number(e.target.value))}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                        <option value={1}>1 Year</option>
+                        <option value={2}>2 Years</option>
+                        <option value={3}>3 Years</option>
+                        <option value={5}>5 Years</option>
+                        <option value={10}>10 Years</option>
+                    </select>
                 </div>
                 <button
                     onClick={onAnalyze}

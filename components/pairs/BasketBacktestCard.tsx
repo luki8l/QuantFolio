@@ -18,8 +18,8 @@ export function BasketBacktestCard({ backtest, dates }: BasketBacktestCardProps)
     })).filter(d => d.date);
 
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 h-full">
-            <DashboardCard className="xl:col-span-2 flex flex-col h-full">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <DashboardCard className="flex flex-col">
                 <h3 className="font-semibold text-lg mb-4 flex items-center justify-between">
                     <span>Backtest Equity Curve</span>
                     <span className={`text-xs px-2 py-1 rounded font-mono ${backtest.totalReturn >= 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
@@ -27,28 +27,28 @@ export function BasketBacktestCard({ backtest, dates }: BasketBacktestCardProps)
                     </span>
                 </h3>
 
-                <div className="grid grid-cols-4 gap-2 mb-6 text-sm">
-                    <div className="flex flex-col items-center bg-secondary/5 rounded p-2 border border-border/50">
-                        <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Total Trades</span>
-                        <span className="font-mono font-bold text-lg">{backtest.trades}</span>
+                <div className="grid grid-cols-4 gap-2 mb-4 text-sm">
+                    <div className="flex flex-col items-center bg-secondary/5 rounded p-1.5 border border-border/50">
+                        <span className="text-muted-foreground text-[9px] uppercase tracking-wider">Trades</span>
+                        <span className="font-mono font-bold text-base">{backtest.trades}</span>
                     </div>
-                    <div className="flex flex-col items-center bg-secondary/5 rounded p-2 border border-border/50">
-                        <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Win Rate</span>
-                        <span className="font-mono font-bold text-lg">{(backtest.winRate * 100).toFixed(0)}%</span>
+                    <div className="flex flex-col items-center bg-secondary/5 rounded p-1.5 border border-border/50">
+                        <span className="text-muted-foreground text-[9px] uppercase tracking-wider">Win Rate</span>
+                        <span className="font-mono font-bold text-base">{(backtest.winRate * 100).toFixed(0)}%</span>
                     </div>
-                    <div className="flex flex-col items-center bg-secondary/5 rounded p-2 border border-border/50">
-                        <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Max Drawdown</span>
-                        <span className="font-mono font-bold text-lg text-red-400">
+                    <div className="flex flex-col items-center bg-secondary/5 rounded p-1.5 border border-border/50">
+                        <span className="text-muted-foreground text-[9px] uppercase tracking-wider">Drawdown</span>
+                        <span className="font-mono font-bold text-base text-red-400">
                             -{(backtest.maxDrawdown * 100).toFixed(1)}%
                         </span>
                     </div>
-                    <div className="flex flex-col items-center bg-secondary/5 rounded p-2 border border-border/50">
-                        <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Sharpe</span>
-                        <span className="font-mono font-bold text-lg text-cyan-400">{backtest.sharpeRatio.toFixed(2)}</span>
+                    <div className="flex flex-col items-center bg-secondary/5 rounded p-1.5 border border-border/50">
+                        <span className="text-muted-foreground text-[9px] uppercase tracking-wider">Sharpe</span>
+                        <span className="font-mono font-bold text-base text-cyan-400">{backtest.sharpeRatio.toFixed(2)}</span>
                     </div>
                 </div>
 
-                <div className="flex-1 min-h-[200px]">
+                <div className="h-[150px]">
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData}>
                             <defs>
@@ -88,7 +88,7 @@ export function BasketBacktestCard({ backtest, dates }: BasketBacktestCardProps)
                 </div>
             </DashboardCard>
 
-            <DashboardCard className="flex flex-col h-full overflow-hidden">
+            <DashboardCard className="flex flex-col max-h-[320px]">
                 <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
                     <History size={16} className="text-primary" /> Detailed Trade History
                 </h3>

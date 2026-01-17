@@ -4,11 +4,13 @@ import { Plus, X, Search, Play } from "lucide-react";
 interface BasketInputProps {
     symbols: string[];
     setSymbols: (symbols: string[]) => void;
+    lookbackYears: number;
+    setLookbackYears: (y: number) => void;
     onAnalyze: () => void;
     isLoading: boolean;
 }
 
-export function BasketInput({ symbols, setSymbols, onAnalyze, isLoading }: BasketInputProps) {
+export function BasketInput({ symbols, setSymbols, lookbackYears, setLookbackYears, onAnalyze, isLoading }: BasketInputProps) {
     const handleAdd = () => {
         if (symbols.length < 10) {
             setSymbols([...symbols, ""]);
@@ -65,13 +67,28 @@ export function BasketInput({ symbols, setSymbols, onAnalyze, isLoading }: Baske
                 ))}
             </div>
 
-            <div className="flex gap-3 pt-2">
-                <button
-                    onClick={handleAdd}
-                    className="flex-1 py-2 px-4 border border-dashed border-primary/30 text-primary hover:bg-primary/5 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-colors"
-                >
-                    <Plus size={16} /> Add Asset
-                </button>
+            <div className="flex flex-col gap-3 pt-2">
+                <div className="flex gap-3">
+                    <button
+                        onClick={handleAdd}
+                        className="flex-1 py-2 px-4 border border-dashed border-primary/30 text-primary hover:bg-primary/5 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                    >
+                        <Plus size={16} /> Add Asset
+                    </button>
+                    <div className="flex-1">
+                        <select
+                            value={lookbackYears}
+                            onChange={(e) => setLookbackYears(Number(e.target.value))}
+                            className="w-full py-2 px-3 rounded-md border border-input bg-background text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                            <option value={1}>1 Year</option>
+                            <option value={2}>2 Years</option>
+                            <option value={3}>3 Years</option>
+                            <option value={5}>5 Years</option>
+                            <option value={10}>10 Years</option>
+                        </select>
+                    </div>
+                </div>
                 <button
                     onClick={onAnalyze}
                     disabled={isLoading || symbols.some(s => !s)}

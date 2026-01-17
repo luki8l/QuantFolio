@@ -13,6 +13,11 @@ function std(data: number[]): number {
     return Math.sqrt(variance);
 }
 
+// Import and re-export config types from shared file
+import { BacktestConfig, DEFAULT_BACKTEST_CONFIG, STRATEGY_PRESETS } from './pairsConfig';
+export type { BacktestConfig };
+export { DEFAULT_BACKTEST_CONFIG, STRATEGY_PRESETS };
+
 export interface Trade {
     type: 'Long' | 'Short'; // Refers to the Spread (Long Spread = Buy A, Short B)
     entryDate: string;
@@ -136,14 +141,46 @@ function calculateHalfLife(spread: number[]) {
 }
 
 /**
- * Simulates a trading strategy based on Z-Score
+ * Calculates rolling Z-Score using a window for mean and standard deviation
+ * For early values where window isn't available, uses expanding window
+ */
+function calculateRollingZScore(spread: number[], window: number): number[] {
+    const zScores: number[] = [];
+
+    for (let i = 0; i < spread.length; i++) {
+        // Use expanding window for early values, rolling window otherwise
+        const startIdx = Math.max(0, i - window + 1);
+        const windowData = spread.slice(startIdx, i + 1);
+
+        if (windowData.length < 2) {
+            // Not enough data, use 0
+            zScores.push(0);
+            continue;
+        }
+
+        const windowMean = mean(windowData);
+        const windowStd = std(windowData);
+
+        if (windowStd === 0) {
+            zScores.push(0);
+        } else {
+            zScores.push((spread[i] - windowMean) / windowStd);
+        }
+    }
+
+    return zScores;
+}
+
+/**
+ * Simulates a trading strategy based on Z-Score with configurable parameters
  */
 function calculateBacktest(
     zScores: number[],
     pricesA: number[],
     pricesB: number[],
     hedgeRatio: number,
-    dates: string[]
+    dates: string[],
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
 ): BacktestResult {
     let equity = 10000;
     const equityCurve = [equity];
@@ -153,6 +190,7 @@ function calculateBacktest(
     let entryPriceB = 0;
     let entryDate = "";
     let entryZ = 0;
+    let entryIndex = 0;
 
     let wins = 0;
     let totalTrades = 0;
@@ -160,13 +198,18 @@ function calculateBacktest(
     let maxDrawdown = 0;
     const history: Trade[] = [];
 
-    // Position Sizing: Fixed Exposure
-    // We allocate $1000 per leg (not all-in)
-    const exposurePerLeg = 1000;
+    // Position Sizing from config
+    const exposurePerLeg = config.capitalPerLeg;
 
     // Track shares for active position
     let entrySharesA = 0;
     let entrySharesB = 0;
+
+    // Track peak P&L for trailing stop
+    let peakTradePnl = 0;
+
+    // Use configurable thresholds
+    const { entryThresholdUpper, entryThresholdLower, exitThreshold } = config;
 
     for (let i = 1; i < zScores.length; i++) {
         const z = zScores[i];
@@ -175,19 +218,46 @@ function calculateBacktest(
         const date = dates[i];
 
         if (position !== 0) {
-            const crossedMean = (position === 1 && z >= 0) || (position === -1 && z <= 0);
+            // Calculate current trade P&L
+            const dirA = position === 1 ? 1 : -1;
+            const dirB = position === 1 ? (hedgeRatio > 0 ? -1 : 1) : (hedgeRatio > 0 ? 1 : -1);
 
-            if (crossedMean) {
-                // Direction multipliers: 1 for Long, -1 for Short
-                const dirA = position === 1 ? 1 : -1;
-                // If position=1 (Long Spread), we are Short B if Beta > 0.
-                // If Beta is negative, we are actually Long B.
-                const dirB = position === 1 ? (hedgeRatio > 0 ? -1 : 1) : (hedgeRatio > 0 ? 1 : -1);
+            const currentPnlA = entrySharesA * dirA * (pA - entryPriceA);
+            const currentPnlB = entrySharesB * dirB * (pB - entryPriceB);
+            const currentPnl = currentPnlA + currentPnlB;
 
-                const pnlA = entrySharesA * dirA * (pA - entryPriceA);
-                const pnlB = entrySharesB * dirB * (pB - entryPriceB);
+            // Track peak P&L for trailing stop
+            if (currentPnl > peakTradePnl) {
+                peakTradePnl = currentPnl;
+            }
 
-                const pnl = pnlA + pnlB;
+            // Calculate investment basis for % calculations
+            const investmentBasis = exposurePerLeg * (1 + Math.abs(hedgeRatio));
+            const pnlPercent = (currentPnl / investmentBasis) * 100;
+            const peakPnlPercent = (peakTradePnl / investmentBasis) * 100;
+
+            // Calculate days held
+            const daysHeld = i - entryIndex;
+
+            // Check exit conditions
+            const crossedMean = position === 1
+                ? z >= exitThreshold
+                : z <= exitThreshold;
+
+            const stopLossHit = config.stopLossPercent !== null &&
+                pnlPercent <= -config.stopLossPercent;
+
+            const trailingStopHit = config.trailingStopPercent !== null &&
+                peakPnlPercent > 0 &&
+                pnlPercent <= peakPnlPercent - config.trailingStopPercent;
+
+            const maxHoldingHit = config.maxHoldingPeriod !== null &&
+                daysHeld >= config.maxHoldingPeriod;
+
+            const shouldExit = crossedMean || stopLossHit || trailingStopHit || maxHoldingHit;
+
+            if (shouldExit) {
+                const pnl = currentPnl;
                 equity += pnl;
                 totalTrades++;
                 if (pnl > 0) wins++;
@@ -199,8 +269,8 @@ function calculateBacktest(
                     entryZ,
                     exitZ: z,
                     pnl,
-                    pnlA,
-                    pnlB,
+                    pnlA: currentPnlA,
+                    pnlB: currentPnlB,
                     sideA: dirA === 1 ? 'Long' : 'Short',
                     sideB: dirB === 1 ? 'Long' : 'Short',
                     entryPriceA,
@@ -212,30 +282,31 @@ function calculateBacktest(
                 position = 0;
                 entrySharesA = 0;
                 entrySharesB = 0;
+                peakTradePnl = 0;
             }
         }
 
         if (position === 0) {
-            if (z > 2.0) {
+            if (z > entryThresholdUpper) {
                 position = -1;
                 entryPriceA = pA;
                 entryPriceB = pB;
-                // Calculate shares dynamically at entry
                 entrySharesA = exposurePerLeg / pA;
                 entrySharesB = (exposurePerLeg * Math.abs(hedgeRatio)) / pB;
-
                 entryDate = date;
                 entryZ = z;
-            } else if (z < -2.0) {
+                entryIndex = i;
+                peakTradePnl = 0;
+            } else if (z < entryThresholdLower) {
                 position = 1;
                 entryPriceA = pA;
                 entryPriceB = pB;
-                // Calculate shares dynamically at entry
                 entrySharesA = exposurePerLeg / pA;
                 entrySharesB = (exposurePerLeg * Math.abs(hedgeRatio)) / pB;
-
                 entryDate = date;
                 entryZ = z;
+                entryIndex = i;
+                peakTradePnl = 0;
             }
         }
 
@@ -272,7 +343,8 @@ function calculateBasketBacktest(
     zScores: number[],
     pricesMap: Record<string, number[]>,
     weights: Record<string, number>,
-    dates: string[]
+    dates: string[],
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
 ): BasketBacktestResult {
     let equity = 10000;
     const equityCurve = [equity];
@@ -281,6 +353,7 @@ function calculateBasketBacktest(
     let entryPrices: Record<string, number> = {};
     let entryDate = "";
     let entryZ = 0;
+    let entryIndex = 0;
 
     let wins = 0;
     let totalTrades = 0;
@@ -288,14 +361,17 @@ function calculateBasketBacktest(
     let maxDrawdown = 0;
     const history: BasketTrade[] = [];
 
-    // Capital Allocation per "Unit" of Spread
-    // Or we can allocate fixed capital to the Dependent asset, and scale others by weight
-    const baseAllocation = 2000; // $2000 for dependent asset
+    // Capital Allocation from config - use 2x capitalPerLeg for basket
+    const baseAllocation = config.capitalPerLeg * 2;
 
-    // Track shares
+    // Track shares and peak P&L for trailing stop
     let entryShares: Record<string, number> = {};
+    let peakTradePnl = 0;
 
     const symbols = Object.keys(pricesMap);
+
+    // Use configurable thresholds
+    const { entryThresholdUpper, entryThresholdLower, exitThreshold } = config;
 
     for (let i = 1; i < zScores.length; i++) {
         const z = zScores[i];
@@ -303,41 +379,56 @@ function calculateBasketBacktest(
 
         // Check Exit
         if (position !== 0) {
-            const crossedMean = (position === 1 && z >= 0) || (position === -1 && z <= 0);
+            // Calculate current P&L
+            let currentPnl = 0;
+            const pnlBreakdown: Record<string, number> = {};
+            const exitPrices: Record<string, number> = {};
 
-            if (crossedMean) {
-                // Close Position
-                let totalPnl = 0;
-                const pnlBreakdown: Record<string, number> = {};
-                const exitPrices: Record<string, number> = {};
+            for (const sym of symbols) {
+                const currentPrice = pricesMap[sym][i];
+                exitPrices[sym] = currentPrice;
+                const shares = entryShares[sym];
+                const weight = weights[sym];
+                const direction = position * (weight >= 0 ? 1 : -1);
+                const legPnl = shares * direction * (currentPrice - entryPrices[sym]);
+                pnlBreakdown[sym] = legPnl;
+                currentPnl += legPnl;
+            }
 
-                for (const sym of symbols) {
-                    const currentPrice = pricesMap[sym][i];
-                    exitPrices[sym] = currentPrice;
-                    const shares = entryShares[sym];
+            // Track peak P&L for trailing stop
+            if (currentPnl > peakTradePnl) {
+                peakTradePnl = currentPnl;
+            }
 
-                    // Logic:
-                    // If Position=1 (Long Spread): We bought where weight > 0, Sold where weight < 0
-                    // Actually, weight sign ALREADY indicates relationship.
-                    // Spread = w1*ln(P1) + w2*ln(P2)...
-                    // If Spread is LOW (<-2), we expect it to rise. So we Buy the Spread.
-                    // Buying Spread means: Buy assets with +Weight, Sell assets with -Weight.
-                    // So Direction for Asset = Position * Sign(Weight)
+            // Calculate investment basis for % calculations
+            const investmentBasis = baseAllocation;
+            const pnlPercent = (currentPnl / investmentBasis) * 100;
+            const peakPnlPercent = (peakTradePnl / investmentBasis) * 100;
 
-                    const weight = weights[sym];
-                    const direction = position * (weight >= 0 ? 1 : -1);
+            // Calculate days held
+            const daysHeld = i - entryIndex;
 
-                    // PnL = Shares * Direction * (Exit - Entry)
-                    // Note: Shares are always positive here
+            // Check exit conditions
+            const crossedMean = position === 1
+                ? z >= exitThreshold
+                : z <= exitThreshold;
 
-                    const legPnl = shares * direction * (currentPrice - entryPrices[sym]);
-                    pnlBreakdown[sym] = legPnl;
-                    totalPnl += legPnl;
-                }
+            const stopLossHit = config.stopLossPercent !== null &&
+                pnlPercent <= -config.stopLossPercent;
 
-                equity += totalPnl;
+            const trailingStopHit = config.trailingStopPercent !== null &&
+                peakPnlPercent > 0 &&
+                pnlPercent <= peakPnlPercent - config.trailingStopPercent;
+
+            const maxHoldingHit = config.maxHoldingPeriod !== null &&
+                daysHeld >= config.maxHoldingPeriod;
+
+            const shouldExit = crossedMean || stopLossHit || trailingStopHit || maxHoldingHit;
+
+            if (shouldExit) {
+                equity += currentPnl;
                 totalTrades++;
-                if (totalPnl > 0) wins++;
+                if (currentPnl > 0) wins++;
 
                 history.push({
                     type: position === 1 ? 'Long' : 'Short',
@@ -345,7 +436,7 @@ function calculateBasketBacktest(
                     exitDate: date,
                     entryZ,
                     exitZ: z,
-                    pnl: totalPnl,
+                    pnl: currentPnl,
                     pnlBreakdown,
                     entryPrices: { ...entryPrices },
                     exitPrices
@@ -354,23 +445,19 @@ function calculateBasketBacktest(
                 position = 0;
                 entryShares = {};
                 entryPrices = {};
+                peakTradePnl = 0;
             }
         }
 
         // Check Entry
         if (position === 0) {
-            if (z > 2.0) {
+            if (z > entryThresholdUpper) {
                 // Short Spread
                 position = -1;
                 entryDate = date;
                 entryZ = z;
-
-                // Calculate Shares
-                const depSym = symbols[0]; // Assuming first is dependent? Or just iterate all
-                // Actually weights defines everything.
-                // Base allocation is for the asset with weight 1.0 (Dependent)
-                // Others are scaled.
-                // Shares = (BaseAllocation * |Weight|) / Price
+                entryIndex = i;
+                peakTradePnl = 0;
 
                 for (const sym of symbols) {
                     const price = pricesMap[sym][i];
@@ -379,11 +466,13 @@ function calculateBasketBacktest(
                     entryShares[sym] = (baseAllocation * Math.abs(weight)) / price;
                 }
 
-            } else if (z < -2.0) {
+            } else if (z < entryThresholdLower) {
                 // Long Spread
                 position = 1;
                 entryDate = date;
                 entryZ = z;
+                entryIndex = i;
+                peakTradePnl = 0;
 
                 for (const sym of symbols) {
                     const price = pricesMap[sym][i];
@@ -423,7 +512,12 @@ function calculateBasketBacktest(
 }
 
 
-export function analyzePairs(pricesA: number[], pricesB: number[], dates: string[]): PairsAnalysisResult {
+export function analyzePairs(
+    pricesA: number[],
+    pricesB: number[],
+    dates: string[],
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
+): PairsAnalysisResult {
     const logA = pricesA.map(p => Math.log(p));
     const logB = pricesB.map(p => Math.log(p));
 
@@ -432,16 +526,26 @@ export function analyzePairs(pricesA: number[], pricesB: number[], dates: string
 
     const spread = logA.map((valA, i) => valA - beta * logB[i] - alpha);
 
+    // Full history stats (always calculated for display)
     const meanSpread: number = mean(spread);
     const stdSpread: number = std(spread);
 
-    const zScore = spread.map(s => (s - meanSpread) / stdSpread);
+    // Calculate Z-Score (with optional rolling window)
+    let zScore: number[];
+
+    if (config.rollingWindow !== null && config.rollingWindow > 0) {
+        // Rolling Z-Score calculation
+        zScore = calculateRollingZScore(spread, config.rollingWindow);
+    } else {
+        // Full history Z-Score (original behavior)
+        zScore = spread.map(s => (s - meanSpread) / stdSpread);
+    }
 
     const halfLife = calculateHalfLife(spread);
 
     const isCointegrated = halfLife < 60 && halfLife > 0;
 
-    const backtest = calculateBacktest(zScore, pricesA, pricesB, beta, dates);
+    const backtest = calculateBacktest(zScore, pricesA, pricesB, beta, dates, config);
 
     return {
         hedgeRatio: beta,
@@ -466,7 +570,11 @@ export function analyzePairs(pricesA: number[], pricesB: number[], dates: string
  * Y = \beta_1 X_1 + \beta_2 X_2 + ... + \alpha + \epsilon
  * Spread = \epsilon (Residuals)
  */
-export function analyzeBasket(pricesMap: Record<string, number[]>, dates: string[]): BasketAnalysisResult {
+export function analyzeBasket(
+    pricesMap: Record<string, number[]>,
+    dates: string[],
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
+): BasketAnalysisResult {
     const symbols = Object.keys(pricesMap);
     if (symbols.length < 2) throw new Error("Need at least 2 assets for basket analysis");
 
@@ -525,11 +633,19 @@ export function analyzeBasket(pricesMap: Record<string, number[]>, dates: string
 
     const meanSpread = mean(spread);
     const stdSpread = std(spread);
-    const zScore = spread.map(s => (s - meanSpread) / stdSpread);
+
+    // Calculate Z-Score (with optional rolling window)
+    let zScore: number[];
+    if (config.rollingWindow !== null && config.rollingWindow > 0) {
+        zScore = calculateRollingZScore(spread, config.rollingWindow);
+    } else {
+        zScore = spread.map(s => (s - meanSpread) / stdSpread);
+    }
+
     const halfLife = calculateHalfLife(spread);
     const isCointegrated = halfLife < 60 && halfLife > 0;
 
-    const backtest = calculateBasketBacktest(zScore, pricesMap, weights, dates);
+    const backtest = calculateBasketBacktest(zScore, pricesMap, weights, dates, config);
 
     return {
         weights,

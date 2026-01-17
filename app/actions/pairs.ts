@@ -3,6 +3,7 @@
 import YahooFinance from 'yahoo-finance2';
 
 import { analyzePairs, analyzeBasket, PairsAnalysisResult, BasketAnalysisResult } from '@/lib/finance/pairs';
+import { BacktestConfig, DEFAULT_BACKTEST_CONFIG } from '@/lib/finance/pairsConfig';
 
 // Shared instance (assuming configured correctly in other files)
 const yf = new YahooFinance({
@@ -36,13 +37,18 @@ export interface BasketDataResponse {
     error?: string;
 }
 
-export async function getPairsData(symbolA: string, symbolB: string): Promise<PairsDataResponse | { error: string }> {
+export async function getPairsData(
+    symbolA: string,
+    symbolB: string,
+    lookbackYears: number = 2,
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
+): Promise<PairsDataResponse | { error: string }> {
     if (!symbolA || !symbolB) return { error: "Missing symbols" };
 
     try {
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setFullYear(startDate.getFullYear() - 2); // 2 Years History
+        startDate.setFullYear(startDate.getFullYear() - lookbackYears);
 
         // Parallel Fetch
         const [histA, histB] = await Promise.all([
@@ -82,8 +88,8 @@ export async function getPairsData(symbolA: string, symbolB: string): Promise<Pa
 
         if (alignedA.length < 100) return { error: "Insufficient overlapping data (need > 100 days)" };
 
-        // Analyze
-        const analysis = analyzePairs(alignedA, alignedB, alignedDates);
+        // Analyze with config
+        const analysis = analyzePairs(alignedA, alignedB, alignedDates, config);
 
         return {
             symbolA: symbolA.toUpperCase(),
@@ -184,12 +190,16 @@ export async function getScannerResults(groups: { name: string, symbols: string[
     }
 }
 
-export async function getBasketData(symbols: string[]): Promise<BasketDataResponse | { error: string }> {
+export async function getBasketData(
+    symbols: string[],
+    lookbackYears: number = 2,
+    config: BacktestConfig = DEFAULT_BACKTEST_CONFIG
+): Promise<BasketDataResponse | { error: string }> {
     if (!symbols || symbols.length < 2) return { error: "Need at least 2 symbols" };
 
     try {
         const startDate = new Date();
-        startDate.setFullYear(startDate.getFullYear() - 2); // 2 Years
+        startDate.setFullYear(startDate.getFullYear() - lookbackYears);
 
         // 1. Parallel Fetch
         const responses = await Promise.all(symbols.map(sym =>
@@ -252,8 +262,8 @@ export async function getBasketData(symbols: string[]): Promise<BasketDataRespon
             }
         }
 
-        // 4. Analyze
-        const analysis = analyzeBasket(alignedPrices, sortedDates);
+        // 4. Analyze with config
+        const analysis = analyzeBasket(alignedPrices, sortedDates, config);
 
         return {
             symbols: validSymbols,
