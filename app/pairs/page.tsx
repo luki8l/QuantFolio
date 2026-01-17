@@ -1,19 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { getPairsData, PairsDataResponse } from "@/app/actions/pairs";
+import { getPairsData, getBasketData, PairsDataResponse, BasketDataResponse } from "@/app/actions/pairs";
 import { PairsCharts } from "@/components/pairs/PairsCharts";
 import { PairsInput } from "@/components/pairs/PairsInput";
 import { PairsScanner } from "@/components/pairs/PairsScanner";
-import { Search, Compass, BarChart2 } from "lucide-react";
+import { BasketInput } from "@/components/pairs/BasketInput";
+import { BasketResults } from "@/components/pairs/BasketResults";
+import { Search, Compass, BarChart2, Layers } from "lucide-react";
 
 export default function PairsPage() {
     const [symbolA, setSymbolA] = useState("KO");
     const [symbolB, setSymbolB] = useState("PEP");
+
+    // Basket State
+    const [basketSymbols, setBasketSymbols] = useState(["XOM", "CVX", "BP"]);
+    const [basketData, setBasketData] = useState<BasketDataResponse | null>(null);
+
     const [data, setData] = useState<PairsDataResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [view, setView] = useState<'analysis' | 'discovery'>('analysis');
+    const [view, setView] = useState<'analysis' | 'discovery' | 'basket'>('analysis');
 
     const handleAnalyze = async (a?: string, b?: string) => {
         const symA = a || symbolA;
@@ -22,7 +29,7 @@ export default function PairsPage() {
         setLoading(true);
         setError(null);
         setData(null);
-        setView('analysis'); // Force analysis view when starting
+        if (view !== 'analysis') setView('analysis');
 
         try {
             const res = await getPairsData(symA, symB);
@@ -40,9 +47,29 @@ export default function PairsPage() {
         }
     };
 
+    const handleAnalyzeBasket = async () => {
+        setLoading(true);
+        setError(null);
+        setBasketData(null);
+
+        try {
+            const res = await getBasketData(basketSymbols);
+            if ('error' in res && res.error) {
+                setError(res.error);
+            } else {
+                setBasketData(res as BasketDataResponse);
+            }
+        } catch (e: any) {
+            setError(e.message || "An error occurred");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSelectFromScanner = (a: string, b: string) => {
         setSymbolA(a);
         setSymbolB(b);
+        setView('analysis');
         handleAnalyze(a, b);
     };
 
@@ -53,7 +80,7 @@ export default function PairsPage() {
                     Statistical Arbitrage (Pairs Trading)
                 </h1>
                 <p className="text-muted-foreground mt-2 max-w-3xl">
-                    Identify pairs of assets that are "cointegrated" (statistically bound together).
+                    Identify pairs or baskets of assets that are "cointegrated" (statistically bound together).
                     When the spread deviates significantly from the mean (Z-Score &gt; 2), it often triggers a mean-reversion trading signal.
                 </p>
             </div>
@@ -63,25 +90,34 @@ export default function PairsPage() {
                 <button
                     onClick={() => setView('analysis')}
                     className={`flex items-center gap-2 px-6 py-3 text-sm font-bold border-b-2 transition-colors ${view === 'analysis'
-                            ? "border-primary text-primary"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                 >
                     <BarChart2 size={16} /> Analysis & Backtest
                 </button>
                 <button
+                    onClick={() => setView('basket')}
+                    className={`flex items-center gap-2 px-6 py-3 text-sm font-bold border-b-2 transition-colors ${view === 'basket'
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                        }`}
+                >
+                    <Layers size={16} /> Multi-Asset Basket
+                </button>
+                <button
                     onClick={() => setView('discovery')}
                     className={`flex items-center gap-2 px-6 py-3 text-sm font-bold border-b-2 transition-colors ${view === 'discovery'
-                            ? "border-primary text-primary"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                 >
                     <Compass size={16} /> Discovery Scanner
                 </button>
             </div>
 
-            {view === 'analysis' ? (
-                <div className="space-y-8">
+            {view === 'analysis' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <PairsInput
                         symbolA={symbolA}
                         symbolB={symbolB}
@@ -110,7 +146,30 @@ export default function PairsPage() {
                         </div>
                     )}
                 </div>
-            ) : (
+            )}
+
+            {view === 'basket' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <BasketInput
+                        symbols={basketSymbols}
+                        setSymbols={setBasketSymbols}
+                        onAnalyze={handleAnalyzeBasket}
+                        isLoading={loading}
+                    />
+
+                    {error && (
+                        <div className="p-4 bg-destructive/10 border border-destructive/50 rounded-lg text-destructive text-sm">
+                            {error}
+                        </div>
+                    )}
+
+                    {basketData && (
+                        <BasketResults data={basketData} />
+                    )}
+                </div>
+            )}
+
+            {view === 'discovery' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <PairsScanner onSelectPair={handleSelectFromScanner} />
                 </div>
@@ -118,3 +177,4 @@ export default function PairsPage() {
         </div>
     );
 }
+

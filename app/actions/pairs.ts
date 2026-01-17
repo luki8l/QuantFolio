@@ -1,7 +1,8 @@
 "use server";
 
 import YahooFinance from 'yahoo-finance2';
-import { analyzePairs, PairsAnalysisResult } from '@/lib/finance/pairs';
+
+import { analyzePairs, analyzeBasket, PairsAnalysisResult, BasketAnalysisResult } from '@/lib/finance/pairs';
 
 // Shared instance (assuming configured correctly in other files)
 const yf = new YahooFinance({
@@ -24,6 +25,14 @@ export interface PairsDataResponse {
     pricesA: number[];
     pricesB: number[];
     analysis: PairsAnalysisResult;
+    error?: string;
+}
+
+export interface BasketDataResponse {
+    symbols: string[];
+    dates: string[];
+    prices: Record<string, number[]>;
+    analysis: BasketAnalysisResult;
     error?: string;
 }
 
@@ -174,3 +183,88 @@ export async function getScannerResults(groups: { name: string, symbols: string[
         return { error: e.message || "Failed to scan pairs" };
     }
 }
+
+export async function getBasketData(symbols: string[]): Promise<BasketDataResponse | { error: string }> {
+    if (!symbols || symbols.length < 2) return { error: "Need at least 2 symbols" };
+
+    try {
+        const startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 2); // 2 Years
+
+        // 1. Parallel Fetch
+        const responses = await Promise.all(symbols.map(sym =>
+            yf.chart(sym, { period1: startDate.toISOString().split('T')[0], interval: '1d' })
+                .catch(e => ({ error: e, symbol: sym }))
+        ));
+
+        const historyMap = new Map<string, Map<string, number>>();
+        let commonDates: Set<string> | null = null;
+        let validSymbols: string[] = [];
+
+        // 2. Process Responses & Find Intersection
+        for (let i = 0; i < symbols.length; i++) {
+            const res = responses[i] as any;
+            if (res.error || !res.quotes) {
+                console.error(`Failed to fetch ${symbols[i]}`);
+                continue;
+            }
+
+            const sym = symbols[i];
+            const priceMap = new Map<string, number>();
+            const currentDates = new Set<string>();
+
+            res.quotes.forEach((q: any) => {
+                if (q.date && (q.adjclose || q.close)) {
+                    const dateStr = new Date(q.date).toISOString().split('T')[0];
+                    priceMap.set(dateStr, q.adjclose || q.close);
+                    currentDates.add(dateStr);
+                }
+            });
+
+            if (priceMap.size < 100) continue; // Skip if insufficient data
+
+            historyMap.set(sym, priceMap);
+            validSymbols.push(sym);
+
+
+            if (commonDates === null) {
+                commonDates = currentDates;
+            } else {
+                // Intersect
+                const current = currentDates; // Capture for closure
+                commonDates = new Set([...commonDates].filter((d: string) => current.has(d)));
+            }
+
+        }
+
+        if (validSymbols.length < 2) return { error: "Not enough valid symbols with data" };
+        if (!commonDates || commonDates.size < 100) return { error: "Insufficient overlapping data (< 100 days common)" };
+
+        // 3. Align Data
+        const sortedDates = Array.from(commonDates).sort();
+        const alignedPrices: Record<string, number[]> = {};
+
+        for (const sym of validSymbols) {
+            alignedPrices[sym] = [];
+            const map = historyMap.get(sym)!;
+            for (const date of sortedDates) {
+                alignedPrices[sym].push(map.get(date)!);
+            }
+        }
+
+        // 4. Analyze
+        const analysis = analyzeBasket(alignedPrices, sortedDates);
+
+        return {
+            symbols: validSymbols,
+            dates: sortedDates,
+            prices: alignedPrices,
+            analysis
+        };
+
+    } catch (e: any) {
+        console.error("Basket Data Error:", e);
+        return { error: e.message || "Failed to analyze basket" };
+    }
+}
+
