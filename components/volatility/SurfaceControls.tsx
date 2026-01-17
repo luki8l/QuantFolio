@@ -13,6 +13,8 @@ interface SurfaceControlsProps {
     showPuts: boolean;
     onShowCallsChange: (show: boolean) => void;
     onShowPutsChange: (show: boolean) => void;
+    useSVI: boolean;
+    onUseSVIChange: (use: boolean) => void;
     colorScale: string;
     onColorScaleChange: (scale: string) => void;
     popularSymbols: string[];
@@ -27,6 +29,8 @@ export function SurfaceControls({
     showPuts,
     onShowCallsChange,
     onShowPutsChange,
+    useSVI,
+    onUseSVIChange,
     colorScale,
     onColorScaleChange,
     popularSymbols
@@ -80,8 +84,8 @@ export function SurfaceControls({
                             onSymbolChange(sym);
                         }}
                         className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${symbol === sym
-                                ? 'bg-primary/20 border-primary/50 text-primary'
-                                : 'bg-secondary/30 border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                            ? 'bg-primary/20 border-primary/50 text-primary'
+                            : 'bg-secondary/30 border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
                             }`}
                     >
                         {sym}
@@ -114,6 +118,20 @@ export function SurfaceControls({
                     />
                     <span className={showPuts ? 'text-foreground' : 'text-muted-foreground'}>
                         Put IV
+                    </span>
+                </label>
+
+                <div className="h-4 w-px bg-border/50" />
+
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={useSVI}
+                        onChange={(e) => onUseSVIChange(e.target.checked)}
+                        className="rounded border-border"
+                    />
+                    <span className={useSVI ? 'text-primary font-medium' : 'text-muted-foreground'}>
+                        SVI Smooth
                     </span>
                 </label>
 

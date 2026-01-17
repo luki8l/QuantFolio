@@ -67,8 +67,8 @@ export async function getVolatilitySurface(
         const allStrikes = new Set<number>();
         const allExpiries: string[] = [];
 
-        // Process up to 8 expiration dates for performance
-        const expirationsToProcess = options.expirationDates.slice(0, 8);
+        // Process up to 12 expiration dates for better surface coverage
+        const expirationsToProcess = options.expirationDates.slice(0, 12);
 
         for (const expiryDate of expirationsToProcess) {
             try {

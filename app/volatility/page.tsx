@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { VolatilitySurface3D } from "@/components/volatility/VolatilitySurface3D";
 import { RegimeIndicator } from "@/components/volatility/RegimeIndicator";
 import { SurfaceControls } from "@/components/volatility/SurfaceControls";
+import { ArbitrageScanner } from "@/components/volatility/ArbitrageScanner";
+import { TermStructureChart } from "@/components/volatility/TermStructureChart";
+import { GreeksHeatmap } from "@/components/volatility/GreeksHeatmap";
+import { VolatilitySmile } from "@/components/volatility/VolatilitySmile";
 import { getVolatilitySurface, getPopularOptionsSymbols, VolatilitySurfaceResponse } from "@/app/actions/volatility";
+import { scanForArbitrage, ArbitrageResult } from "@/lib/finance/arbitrage";
 import { Activity, TrendingUp, Clock, DollarSign, BarChart3 } from "lucide-react";
 
 export default function VolatilityPage() {
@@ -18,7 +23,14 @@ export default function VolatilityPage() {
     // Display options
     const [showCalls, setShowCalls] = useState(true);
     const [showPuts, setShowPuts] = useState(false);
+    const [useSVI, setUseSVI] = useState(false);
     const [colorScale, setColorScale] = useState<string>('Viridis');
+
+    // Calculate arbitrage opportunities
+    const arbitrageResult = useMemo<ArbitrageResult | null>(() => {
+        if (!data) return null;
+        return scanForArbitrage(data.points, data.spotPrice);
+    }, [data]);
 
     // Load popular symbols on mount
     useEffect(() => {
@@ -77,6 +89,8 @@ export default function VolatilityPage() {
                 showPuts={showPuts}
                 onShowCallsChange={setShowCalls}
                 onShowPutsChange={setShowPuts}
+                useSVI={useSVI}
+                onUseSVIChange={setUseSVI}
                 colorScale={colorScale}
                 onColorScaleChange={setColorScale}
                 popularSymbols={popularSymbols}
@@ -91,7 +105,7 @@ export default function VolatilityPage() {
 
             {/* Main Content */}
             {data && (
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
                     {/* 3D Surface - Main Area */}
                     <DashboardCard className="xl:col-span-3 p-0 overflow-hidden">
                         <div className="p-4 border-b border-border/50 flex items-center justify-between">
@@ -124,6 +138,7 @@ export default function VolatilityPage() {
                                 spotPrice={data.spotPrice}
                                 showCalls={showCalls}
                                 showPuts={showPuts}
+                                useSVI={useSVI}
                                 colorScale={colorScale as any}
                             />
                         </div>
@@ -177,38 +192,35 @@ export default function VolatilityPage() {
                             </div>
                         </DashboardCard>
 
-                        {/* Expiry Breakdown */}
-                        <DashboardCard className="space-y-3">
-                            <h3 className="font-semibold text-sm flex items-center gap-2">
-                                <Clock size={14} className="text-purple-400" />
-                                By Expiration
-                            </h3>
-
-                            <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
-                                {data.expiryDates.map((expiry) => {
-                                    const expiryPoints = data.points.filter(p => p.expiry === expiry);
-                                    const avgIV = expiryPoints.reduce((sum, p) => {
-                                        const iv = p.callIV ?? p.putIV ?? 0;
-                                        return sum + iv;
-                                    }, 0) / expiryPoints.length;
-                                    const days = expiryPoints[0]?.daysToExpiry || 0;
-
-                                    return (
-                                        <div key={expiry} className="flex justify-between items-center text-xs p-2 bg-secondary/30 rounded">
-                                            <div>
-                                                <span className="font-mono">{expiry}</span>
-                                                <span className="text-muted-foreground ml-2">({days}d)</span>
-                                            </div>
-                                            <span className={`font-mono font-medium ${avgIV > 0.3 ? 'text-yellow-400' : avgIV > 0.2 ? 'text-foreground' : 'text-green-400'
-                                                }`}>
-                                                {(avgIV * 100).toFixed(1)}%
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </DashboardCard>
+                        {/* Arbitrage Scanner */}
+                        <ArbitrageScanner
+                            result={arbitrageResult}
+                            isLoading={loading}
+                        />
                     </div>
+                </div>
+            )}
+
+            {/* Second Row - Analytics */}
+            {data && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Volatility Smile */}
+                    <VolatilitySmile
+                        points={data.points}
+                        spotPrice={data.spotPrice}
+                    />
+
+                    {/* Greeks Heatmap */}
+                    <GreeksHeatmap
+                        points={data.points}
+                        spotPrice={data.spotPrice}
+                    />
+
+                    {/* Term Structure */}
+                    <TermStructureChart
+                        points={data.points}
+                        spotPrice={data.spotPrice}
+                    />
                 </div>
             )}
 

@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
 import { SurfacePoint } from '@/lib/finance/blackScholes';
+import { generateSVISurface } from '@/lib/finance/sviFitting';
 
 // Dynamic import for Plotly (it doesn't work well with SSR)
 const Plot = dynamic(() => import('react-plotly.js'), {
@@ -19,6 +20,7 @@ interface VolatilitySurface3DProps {
     spotPrice: number;
     showCalls: boolean;
     showPuts: boolean;
+    useSVI?: boolean;
     colorScale?: 'Viridis' | 'Plasma' | 'Inferno' | 'Magma' | 'Cividis' | 'RdYlGn';
 }
 
@@ -27,14 +29,67 @@ export function VolatilitySurface3D({
     spotPrice,
     showCalls = true,
     showPuts = false,
+    useSVI = false,
     colorScale = 'Viridis'
 }: VolatilitySurface3DProps) {
     const surfaceData = useMemo(() => {
         if (!points || points.length === 0) return null;
 
-        // Get unique sorted strikes and expiries
-        const strikes = [...new Set(points.map(p => p.strike))].sort((a, b) => a - b);
-        const expiries = [...new Set(points.map(p => p.daysToExpiry))].sort((a, b) => a - b);
+        // Get unique sorted strikes and expiries from raw data
+        const rawStrikes = [...new Set(points.map(p => p.strike))].sort((a, b) => a - b);
+        const rawExpiries = [...new Set(points.map(p => p.daysToExpiry))].sort((a, b) => a - b);
+
+        if (useSVI && rawStrikes.length > 0 && rawExpiries.length > 0) {
+            // Generate smooth SVI surface
+            try {
+                const sviResult = generateSVISurface(
+                    points,
+                    spotPrice,
+                    { min: rawStrikes[0], max: rawStrikes[rawStrikes.length - 1] },
+                    { min: rawExpiries[0], max: rawExpiries[rawExpiries.length - 1] },
+                    40  // Higher resolution grid
+                );
+
+                // Filter out NaN values
+                const validIvGrid = sviResult.ivGrid.map(row =>
+                    row.map(v => (isNaN(v) || v <= 0) ? null : v)
+                );
+
+                return {
+                    strikes: sviResult.strikes,
+                    expiries: sviResult.expiries,
+                    z: validIvGrid,
+                    customData: [] as (SurfacePoint | null)[][],
+                    isSVI: true
+                };
+            } catch (e) {
+                console.warn('SVI fitting failed, falling back to raw data:', e);
+            }
+        }
+
+        // Standard raw data surface
+        // For large datasets (like NVDA with 400+ strikes), sample strikes around ATM
+        let strikes = rawStrikes;
+        const expiries = rawExpiries;
+
+        if (rawStrikes.length > 80) {
+            // Find ATM index
+            const atmIndex = rawStrikes.findIndex(s => s >= spotPrice) || Math.floor(rawStrikes.length / 2);
+
+            // Sample 80 strikes centered around ATM with better coverage
+            const halfWindow = 40;
+            const start = Math.max(0, atmIndex - halfWindow);
+            const end = Math.min(rawStrikes.length, atmIndex + halfWindow);
+
+            // Take every Nth strike if still too many
+            const selectedStrikes = rawStrikes.slice(start, end);
+            if (selectedStrikes.length > 80) {
+                const step = Math.ceil(selectedStrikes.length / 80);
+                strikes = selectedStrikes.filter((_, i) => i % step === 0);
+            } else {
+                strikes = selectedStrikes;
+            }
+        }
 
         // Create a grid for the surface
         const z: (number | null)[][] = [];
@@ -73,8 +128,8 @@ export function VolatilitySurface3D({
             customData.push(dataRow);
         }
 
-        return { strikes, expiries, z, customData };
-    }, [points, showCalls, showPuts]);
+        return { strikes, expiries, z, customData, isSVI: false };
+    }, [points, showCalls, showPuts, useSVI, spotPrice]);
 
     if (!surfaceData) {
         return (
@@ -103,6 +158,7 @@ export function VolatilitySurface3D({
                     z: z,
                     colorscale: colorScale,
                     showscale: true,
+                    connectgaps: true,  // Interpolate across null values
                     colorbar: {
                         title: {
                             text: 'IV (%)',
