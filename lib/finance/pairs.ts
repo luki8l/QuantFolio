@@ -12,12 +12,21 @@ function std(data: number[]): number {
 }
 
 export interface Trade {
-    type: 'Long' | 'Short';
+    type: 'Long' | 'Short'; // Refers to the Spread (Long Spread = Buy A, Short B)
     entryDate: string;
     exitDate: string;
     entryZ: number;
     exitZ: number;
     pnl: number;
+    pnlA: number;
+    pnlB: number;
+    // Leg Details
+    sideA: 'Long' | 'Short';
+    sideB: 'Long' | 'Short';
+    entryPriceA: number;
+    entryPriceB: number;
+    exitPriceA: number;
+    exitPriceB: number;
 }
 
 export interface BacktestResult {
@@ -114,9 +123,9 @@ function calculateBacktest(
     // We allocate $1000 per leg (not all-in)
     const exposurePerLeg = 1000;
 
-    // Units based on first price to keep sizes consistent throughout
-    const sizeA = exposurePerLeg / pricesA[0];
-    const sizeB = (exposurePerLeg * hedgeRatio) / pricesB[0];
+    // Track shares for active position
+    let entrySharesA = 0;
+    let entrySharesB = 0;
 
     for (let i = 1; i < zScores.length; i++) {
         const z = zScores[i];
@@ -128,15 +137,16 @@ function calculateBacktest(
             const crossedMean = (position === 1 && z >= 0) || (position === -1 && z <= 0);
 
             if (crossedMean) {
-                let pnl = 0;
-                if (position === 1) {
-                    pnl += sizeA * (pA - entryPriceA);
-                    pnl += sizeB * (pB - entryPriceB);
-                } else if (position === -1) {
-                    pnl += sizeA * (entryPriceA - pA);
-                    pnl += sizeB * (entryPriceB - pB);
-                }
+                // Direction multipliers: 1 for Long, -1 for Short
+                const dirA = position === 1 ? 1 : -1;
+                // If position=1 (Long Spread), we are Short B if Beta > 0.
+                // If Beta is negative, we are actually Long B.
+                const dirB = position === 1 ? (hedgeRatio > 0 ? -1 : 1) : (hedgeRatio > 0 ? 1 : -1);
 
+                const pnlA = entrySharesA * dirA * (pA - entryPriceA);
+                const pnlB = entrySharesB * dirB * (pB - entryPriceB);
+
+                const pnl = pnlA + pnlB;
                 equity += pnl;
                 totalTrades++;
                 if (pnl > 0) wins++;
@@ -147,10 +157,20 @@ function calculateBacktest(
                     exitDate: date,
                     entryZ,
                     exitZ: z,
-                    pnl
+                    pnl,
+                    pnlA,
+                    pnlB,
+                    sideA: dirA === 1 ? 'Long' : 'Short',
+                    sideB: dirB === 1 ? 'Long' : 'Short',
+                    entryPriceA,
+                    entryPriceB,
+                    exitPriceA: pA,
+                    exitPriceB: pB
                 });
 
                 position = 0;
+                entrySharesA = 0;
+                entrySharesB = 0;
             }
         }
 
@@ -159,12 +179,20 @@ function calculateBacktest(
                 position = -1;
                 entryPriceA = pA;
                 entryPriceB = pB;
+                // Calculate shares dynamically at entry
+                entrySharesA = exposurePerLeg / pA;
+                entrySharesB = (exposurePerLeg * Math.abs(hedgeRatio)) / pB;
+
                 entryDate = date;
                 entryZ = z;
             } else if (z < -2.0) {
                 position = 1;
                 entryPriceA = pA;
                 entryPriceB = pB;
+                // Calculate shares dynamically at entry
+                entrySharesA = exposurePerLeg / pA;
+                entrySharesB = (exposurePerLeg * Math.abs(hedgeRatio)) / pB;
+
                 entryDate = date;
                 entryZ = z;
             }
@@ -204,6 +232,7 @@ export function analyzePairs(pricesA: number[], pricesB: number[], dates: string
     const logB = pricesB.map(p => Math.log(p));
 
     const { beta, alpha } = calculateOLS(logB, logA);
+    // If beta is extremely small or zero, it might lead to strange results, but OLS is valid.
 
     const spread = logA.map((valA, i) => valA - beta * logB[i] - alpha);
 

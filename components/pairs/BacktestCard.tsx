@@ -3,16 +3,18 @@
 import { DashboardCard } from "@/components/dashboard/DashboardCard";
 import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, AreaChart, Area } from 'recharts';
 import { BacktestResult } from "@/lib/finance/pairs";
-import { History, TrendingUp, TrendingDown } from "lucide-react";
+import { History, TrendingUp, TrendingDown, ArrowRight, Activity } from "lucide-react";
 
 interface BacktestCardProps {
     backtest: BacktestResult;
-    dates: string[]; // Use dates from main data to align chart
+    dates: string[];
+    symbolA: string;
+    symbolB: string;
 }
 
-export function BacktestCard({ backtest, dates }: BacktestCardProps) {
+export function BacktestCard({ backtest, dates, symbolA, symbolB }: BacktestCardProps) {
     const chartData = backtest.equityCurve.map((val, i) => ({
-        date: dates[i] || i, // fallback if dates mismatch
+        date: dates[i] || i,
         equity: val
     })).filter(d => d.date);
 
@@ -92,7 +94,7 @@ export function BacktestCard({ backtest, dates }: BacktestCardProps) {
 
             <DashboardCard className="flex flex-col h-full overflow-hidden">
                 <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                    <History size={16} className="text-primary" /> Recent Trade History
+                    <History size={16} className="text-primary" /> Detailed Trade History
                 </h3>
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                     {backtest.history.length === 0 ? (
@@ -101,29 +103,69 @@ export function BacktestCard({ backtest, dates }: BacktestCardProps) {
                             <p className="text-xs">No trades triggered</p>
                         </div>
                     ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             {backtest.history.slice().reverse().map((trade, i) => (
-                                <div key={i} className="p-3 rounded-lg bg-secondary/5 border border-border/50 flex flex-col gap-2">
+                                <div key={i} className="p-3 rounded-lg bg-secondary/5 border border-border/50 flex flex-col gap-3 transition-colors hover:border-border">
                                     <div className="flex justify-between items-start">
                                         <div className="flex items-center gap-2">
                                             {trade.type === 'Long' ?
                                                 <TrendingUp size={14} className="text-green-400" /> :
                                                 <TrendingDown size={14} className="text-red-400" />
                                             }
-                                            <span className="text-xs font-bold">{trade.type} Spread</span>
+                                            <span className="text-xs font-bold">{trade.type} Spread Signal</span>
                                         </div>
-                                        <span className={`text-xs font-mono font-bold ${trade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                            {trade.pnl >= 0 ? "+" : ""}${trade.pnl.toFixed(2)}
-                                        </span>
+                                        <div className="flex flex-col items-end">
+                                            <span className={`text-xs font-mono font-bold ${trade.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                                {trade.pnl >= 0 ? "+" : ""}${trade.pnl.toFixed(2)}
+                                            </span>
+                                            <span className="text-[9px] text-muted-foreground">Combined P&L</span>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                                        <span>{trade.entryDate}</span>
-                                        <span>&rarr;</span>
-                                        <span>{trade.exitDate}</span>
+
+                                    {/* Asset Leg Details */}
+                                    <div className="grid grid-cols-1 gap-2 border-l-2 border-primary/20 pl-3">
+                                        {/* Leg A */}
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-[11px]">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={`w-1 h-1 rounded-full ${trade.sideA === 'Long' ? 'bg-primary shadow-[0_0_4px_var(--primary)]' : 'bg-red-400 shadow-[0_0_4px_var(--destructive)]'}`} />
+                                                    <span className="font-bold">{symbolA}</span>
+                                                    <span className="text-muted-foreground opacity-70">({trade.sideA})</span>
+                                                </div>
+                                                <span className={`font-mono font-bold text-[10px] ${trade.pnlA >= 0 ? "text-green-500/80" : "text-red-500/80"}`}>
+                                                    {trade.pnlA >= 0 ? "+" : ""}${trade.pnlA.toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="font-mono text-[9px] text-muted-foreground flex items-center gap-1">
+                                                <span>Price: ${trade.entryPriceA.toFixed(2)}</span>
+                                                <ArrowRight size={8} />
+                                                <span>${trade.exitPriceA.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Leg B */}
+                                        <div className="flex flex-col gap-1 mt-1">
+                                            <div className="flex justify-between items-center text-[11px]">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={`w-1 h-1 rounded-full ${trade.sideB === 'Long' ? 'bg-primary shadow-[0_0_4px_var(--primary)]' : 'bg-red-400 shadow-[0_0_4px_var(--destructive)]'}`} />
+                                                    <span className="font-bold">{symbolB}</span>
+                                                    <span className="text-muted-foreground opacity-70">({trade.sideB})</span>
+                                                </div>
+                                                <span className={`font-mono font-bold text-[10px] ${trade.pnlB >= 0 ? "text-green-500/80" : "text-red-500/80"}`}>
+                                                    {trade.pnlB >= 0 ? "+" : ""}${trade.pnlB.toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <div className="font-mono text-[9px] text-muted-foreground flex items-center gap-1">
+                                                <span>Price: ${trade.entryPriceB.toFixed(2)}</span>
+                                                <ArrowRight size={8} />
+                                                <span>${trade.exitPriceB.toFixed(2)}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between text-[10px] font-mono">
-                                        <span className="text-muted-foreground">Entry Z: {trade.entryZ.toFixed(2)}</span>
-                                        <span className="text-muted-foreground">Exit Z: {trade.exitZ.toFixed(2)}</span>
+
+                                    <div className="flex justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/30">
+                                        <span>{trade.entryDate} &rarr; {trade.exitDate}</span>
+                                        <span className="font-mono">Z: {trade.entryZ.toFixed(1)} &rarr; {trade.exitZ.toFixed(1)}</span>
                                     </div>
                                 </div>
                             ))}
@@ -134,5 +176,3 @@ export function BacktestCard({ backtest, dates }: BacktestCardProps) {
         </div>
     );
 }
-
-import { Activity } from "lucide-react";
